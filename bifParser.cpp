@@ -9,8 +9,9 @@ class Token {
         Type type;
         std::string value;
 
+        inline static const std::regex ignore_regex = std::regex(R"(^(\s+|,+|\|+|\"|/\*.*?\*/))");
+
         inline static const std::vector<std::pair<Type, std::regex>> Spec = {
-            {IGNORE,     std::regex(R"(^(\s+|,+|\|+|\"|/\*.*?\*/))")},
             {KEYWORD,    std::regex(R"(^\b(network|variable|probability|property|type|discrete|default|table)\b)")},
             {WORD, std::regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
             {SYMBOL,     std::regex(R"(^[{}()[\];=,`|])")},
@@ -35,46 +36,26 @@ class Lexer {
     private:
         std::string source;
         std::string::iterator cursor;
-        std::vector<Token> tokens_window;
 
     public:
         Lexer(std::ifstream& input) 
             : source(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()),
                 cursor(source.begin()) {}
 
-        Token getNextToken() {
-            if (!tokens_window.empty()) {
-                Token current = tokens_window.front();
-                tokens_window.erase(tokens_window.begin());
-                return current;
-            }
-            Token current = lexNextToken();
-            while (current.type == Token::IGNORE) {
-                    current = lexNextToken();
-            }
-            return current;
-        }
-
-        Token peekNextToken(int n = 0) {
-            while (tokens_window.size() <= n) {
-                Token next = lexNextToken();
-                while (next.type == Token::IGNORE) {
-                    next = lexNextToken();
-                }
-                if (next.type != Token::END)
-                    tokens_window.push_back(next);
-            }
-            return tokens_window[n];
-        }
-
-    private:
-        Token lexNextToken() {         //I could simplify the structure by removing the window
+        Token getNextToken() {         //I could simplify the structure by removing the window
             std::smatch match_result;
 
             if(cursor == source.end())
                 return Token(Token::END, "");
-            
+
             std::string remaining = std::string(cursor, source.end());
+
+            std::regex_search(remaining, match_result, Token::ignore_regex);
+            if(!match_result.empty()) {
+                cursor += match_result.str().size();
+                return getNextToken();
+            }
+
             for(auto [type, regex] : Token::Spec) {
                 std::regex_search(remaining, match_result, regex);
 
@@ -119,7 +100,7 @@ class Parser {
 
         void advance() {
             current = lexer.getNextToken();
-            //std::cout<<current<<std::endl;
+            std::cout<<current<<std::endl;
         }
 
         Token expect(Token::Type expectedType, const std::string expectedValue = "") {
