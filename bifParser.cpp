@@ -15,8 +15,8 @@ class Token {
             {KEYWORD,    std::regex(R"(^\b(network|variable|probability|property|type|discrete|default|table)\b)")},
             {WORD, std::regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
             {SYMBOL,     std::regex(R"(^[{}()[\];=,`|])")},
-            {FLOATING_POINT_LITERAL,     std::regex(R"(^\d+\.(\d+)?)")},
-            {DECIMAL_LITERAL,     std::regex(R"(^\d+)")}
+            {DECIMAL_LITERAL,     std::regex(R"(^\d+(?!\.|[eE]))")},
+            {FLOATING_POINT_LITERAL,     std::regex(R"(^((\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?))")}
         };
 
         Token(Type type = END, std::string value = "")
@@ -100,10 +100,10 @@ class Parser {
 
         void advance() {
             current = lexer.getNextToken();
-            std::cout<<current<<std::endl;
+            //std::cout<<current<<std::endl;
         }
 
-        Token expect(Token::Type expectedType, const std::string expectedValue = "") {
+        Token expect(const Token::Type expectedType, const std::string expectedValue = "") {
             if(current.type != expectedType || (!std::empty(expectedValue) && current.value != expectedValue)) {
                 throw std::runtime_error("Expected " + expectedValue + ", got " + current.value);
             }
@@ -118,8 +118,9 @@ class Parser {
                 advance();
         }
 
-        void parse() {
+        Network parse() {
             parseCompilationUnit();
+            return network;
         }
 
     private:
@@ -252,10 +253,12 @@ class Parser {
                 if(current.type == Token::KEYWORD) {
                     if(current.value == "variable") {
                         Variable variable = parseVariableDeclaration();
+                        std::cout<<"variable: "<<variable.name<<std::endl;
                         network.variables.push_back(variable);
                     }
                     else if(current.value == "probability") {
                         Probability probability = parseProbabilityDeclaration();
+                        std::cout<<"probability: "<<probability.variable<<std::endl;
                         network.probabilities.push_back(probability);
                     }
                 } else {
@@ -268,11 +271,23 @@ class Parser {
 
 int main() {
 
-    std::string filename = "BIF/asia.bif";
+    std::string filename;
+
+    std::cin>>filename;
+
     std::ifstream input(filename);    
     Parser parser(input);
 
+    const auto start = std::chrono::steady_clock::now();
+
     parser.parse();
+
+    const auto finish = std::chrono::steady_clock::now();
+    const std::chrono::duration<double> duration = finish - start;
+
+    std::cout<<"duration: "<<duration.count();
 
     return 0;
 }
+
+//g++ -O3 -Wall -Wextra -Wpedantic -o bifParser bifParser.cpp
