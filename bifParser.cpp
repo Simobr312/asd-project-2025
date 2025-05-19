@@ -3,21 +3,208 @@
 //https://www.bnlearn.com/bnrepository/
 //http://www.cs.washington.edu/dm/vfml/appendixes/bif.htm
 
+class Matcher {
+    protected:
+        std::string::iterator start;
+        std::string::iterator it;
+
+        static bool isADigit(char c) {
+            return c >= '0' && c <= '9';
+        }
+
+        static bool isAlpha(char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        }
+
+        static bool isAlphaNumeric(char c) {
+            return isADigit(c) || isAlpha(c) || c == '_';
+        }
+
+    public:
+        Matcher() = default;
+        ~Matcher() = default;
+
+        virtual bool match(const std::string::iterator cursor, const std::string::iterator end) = 0;
+
+        std::string::iterator getIterator() {
+            return it;
+        }
+
+        std::string getValue() {
+            return std::string(start, it);
+        }
+};
+
+/*
+inline static const std::vector<std::pair<Type, std::regex>> Spec = {
+        {KEYWORD,    std::regex()},
+        {WORD, std::regex()},
+        {SYMBOL,     std::regex()},
+        {DECIMAL_LITERAL,     std::regex()},
+        {FLOATING_POINT_LITERAL,     std::regex()}
+    };
+*/
+
+class IgnoreMatcher : public Matcher {
+    private:
+        bool isIgnoredSymbols(const char c) {
+            return c == ' ' || c == '|' || c == ',' || c == '"' || c == '\n';
+        }
+
+        bool matchCommentStart(const std::string::iterator it, const std::string::iterator end) {
+            return it != end && *it == '/' && (it + 1) != end && *(it + 1) == '*';
+        }
+
+        bool matchCommentEnd(const std::string::iterator it, const std::string::iterator end) {
+            return it != end && *it == '*' && (it + 1) != end && *(it + 1) == '/';
+        }
+    public:
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            it = cursor;
+        
+            while(it != end && isIgnoredSymbols(*it)) ++it;
+            
+            if (matchCommentStart(it, end)) {
+                it += 2; // skip /*
+                while(it != end) {
+                    if (matchCommentEnd(it, end)) {
+                         it += 2; // skip */
+                        break;
+                    }
+                    ++it;
+                }
+            }
+            
+            return (it == cursor) ? false : true;
+        }
+};
+
+class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|property|type|discrete|default|table)\b)" 
+    public:
+        inline static const std::vector<std::string> KEYWORDS = {
+            "network", "variable", "probability", "table", "type", "discrete", "default", "property"
+        };
+
+        bool areEqual(const std::string a, const std::string b) {
+            return a.compare(b) == 0;
+        }
+
+        bool theWordEnds(const std::string::iterator it) {
+            return !isAlphaNumeric(*it);
+        }
+
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            for(auto keyword : KEYWORDS) {
+                it = cursor + keyword.size();
+                if(it <= end && areEqual(keyword, std::string(cursor, it)) 
+                    && theWordEnds(it))
+                        return true;
+            }
+            return false;
+        }
+};
+
+
+class WordMatcher : public Matcher { //R"(^[a-zA-Z_][a-zA-Z0-9_]*)"
+    public:
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            it = cursor;
+
+            if (it == end || !isAlpha(*it))  // word starts with a letter
+                return false;
+
+            while (it != end && isAlphaNumeric(*it))  // letters or digits
+                ++it;
+
+            return true;
+        }
+};
+
+class SymbolMatcher : public Matcher { //  R"(^[{}()[\];=,`|])" 
+    public:
+        inline static const std::string SYMBOLS = "[{}()[];=,`|]";
+
+        bool isASymbol(const char c) {
+            return SYMBOLS.find(c) != std::string::npos;
+        }
+
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            it = cursor;
+
+
+            if(it != end && isASymbol(*it)) {
+                ++it;
+                return true;
+            }
+
+            return false;
+        }
+};
+
+class DecimalMatcher : public Matcher { //R"(^\d+(?!\.|[eE]))"
+    public:
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            it = cursor;
+
+            if (!isADigit(*it))
+                return false;
+
+            while (it != end && isADigit(*it))
+                ++it;
+
+            return true;
+
+            return false;
+        }
+};
+
+class FloatMatcher : public Matcher { //R"(^((\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?))"
+    public:
+        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
+            start = cursor;
+            it = cursor;
+
+            if (!isADigit(*it))
+                return false;
+
+            while (it != end && isADigit(*it))
+                ++it;
+
+            if (it == end || *it != '.')  // must have decimal point for float
+                return false;
+
+            ++it; // '.'
+
+            if (it == end || !isADigit(*it))
+                return false;
+
+            while (it != end && isADigit(*it))
+                ++it;
+            
+            if(it != end && *it == 'e') {
+                ++it;
+                if(it != end && (*it == '+' || *it == '-'))
+                    ++it;
+            }
+
+            while (it != end && isADigit(*it))
+                ++it;
+
+            return true;
+        }
+};
+
+
 class Token {
     public:
         enum Type {KEYWORD, WORD, SYMBOL, DECIMAL_LITERAL, FLOATING_POINT_LITERAL, END, TEXT, IGNORE};
         Type type;
         std::string value;
-
-        inline static const std::regex ignore_regex = std::regex(R"(^(\s+|,+|\|+|\"|/\*.*?\*/))");
-
-        inline static const std::vector<std::pair<Type, std::regex>> Spec = {
-            {KEYWORD,    std::regex(R"(^\b(network|variable|probability|property|type|discrete|default|table)\b)")},
-            {WORD, std::regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
-            {SYMBOL,     std::regex(R"(^[{}()[\];=,`|])")},
-            {DECIMAL_LITERAL,     std::regex(R"(^\d+(?!\.|[eE]))")},
-            {FLOATING_POINT_LITERAL,     std::regex(R"(^((\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?))")}
-        };
 
         Token(Type type = END, std::string value = "")
             : type(type), value(value) {};
@@ -37,38 +224,43 @@ class Lexer {
         std::string source;
         std::string::iterator cursor;
 
+        std::unique_ptr<Matcher> ignoreMatcher;
+        std::vector<std::pair<Token::Type, std::unique_ptr<Matcher>>> matchers;
+
     public:
         Lexer(std::ifstream& input) 
-            : source(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()),
-                cursor(source.begin()) {}
+        : source(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()),
+          cursor(source.begin()) {
 
-        Token getNextToken() {         //I could simplify the structure by removing the window
+            ignoreMatcher = std::make_unique<IgnoreMatcher>();
+
+            matchers.push_back({Token::SYMBOL, std::make_unique<SymbolMatcher>()});
+            matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>()});
+            matchers.push_back({Token::WORD, std::make_unique<WordMatcher>()}); // I'm making sure word come after keyword
+            matchers.push_back({Token::FLOATING_POINT_LITERAL, std::make_unique<FloatMatcher>()}); 
+            matchers.push_back({Token::DECIMAL_LITERAL, std::make_unique<DecimalMatcher>()}); //and so decimal after floating
+        }
+
+        Token getNextToken() {
             std::smatch match_result;
 
             if(cursor == source.end())
                 return Token(Token::END, "");
 
-            std::string remaining = std::string(cursor, source.end());
-
-            std::regex_search(remaining, match_result, Token::ignore_regex);
-            if(!match_result.empty()) {
-                cursor += match_result.str().size();
+            if(ignoreMatcher->match(cursor, source.end())) {
+                cursor = ignoreMatcher->getIterator();
                 return getNextToken();
             }
 
-            for(auto [type, regex] : Token::Spec) {
-                std::regex_search(remaining, match_result, regex);
-
-                if(match_result.empty())
-                    continue;
-                
-                std::string value = match_result.str();
-                cursor += value.size();
-                return Token(type, value);
+            for(auto& [type, matcher] : matchers) {
+                if(matcher->match(cursor, source.end())) {
+                    cursor = matcher->getIterator();
+                    return Token(type, matcher->getValue());
+                }
             }
 
             throw std::runtime_error("Unexpected token");
-        }
+        } 
 };
 
 //
@@ -271,7 +463,7 @@ class Parser {
 
 int main() {
 
-    std::string filename;
+    std::string filename = "BIF/pathfinder.bif";
 
     std::cin>>filename;
 
