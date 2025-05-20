@@ -5,9 +5,6 @@
 
 class Matcher {
     protected:
-        std::string::iterator start;
-        std::string::iterator it;
-
         static bool isADigit(char c) {
             return c >= '0' && c <= '9';
         }
@@ -24,26 +21,8 @@ class Matcher {
         Matcher() = default;
         ~Matcher() = default;
 
-        virtual bool match(const std::string::iterator cursor, const std::string::iterator end) = 0;
-
-        std::string::iterator getIterator() {
-            return it;
-        }
-
-        std::string getValue() {
-            return std::string(start, it);
-        }
+    virtual std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) = 0;
 };
-
-/*
-inline static const std::vector<std::pair<Type, std::regex>> Spec = {
-        {KEYWORD,    std::regex()},
-        {WORD, std::regex()},
-        {SYMBOL,     std::regex()},
-        {DECIMAL_LITERAL,     std::regex()},
-        {FLOATING_POINT_LITERAL,     std::regex()}
-    };
-*/
 
 class IgnoreMatcher : public Matcher {
     private:
@@ -59,9 +38,8 @@ class IgnoreMatcher : public Matcher {
             return it != end && *it == '*' && (it + 1) != end && *(it + 1) == '/';
         }
     public:
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
-            it = cursor;
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
         
             while(it != end && isIgnoredSymbols(*it)) ++it;
             
@@ -76,7 +54,7 @@ class IgnoreMatcher : public Matcher {
                 }
             }
             
-            return (it == cursor) ? false : true;
+            return {(it == cursor) ? false : true, it};
         }
 };
 
@@ -94,32 +72,31 @@ class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|pr
             return !isAlphaNumeric(*it);
         }
 
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
             for(auto keyword : KEYWORDS) {
                 it = cursor + keyword.size();
                 if(it <= end && areEqual(keyword, std::string(cursor, it)) 
                     && theWordEnds(it))
-                        return true;
+                        return {true, it};
             }
-            return false;
+            return {false, it};
         }
 };
 
 
 class WordMatcher : public Matcher { //R"(^[a-zA-Z_][a-zA-Z0-9_]*)"
     public:
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
-            it = cursor;
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
 
             if (it == end || !isAlpha(*it))  // word starts with a letter
-                return false;
+                return {false, it};
 
             while (it != end && isAlphaNumeric(*it))  // letters or digits
                 ++it;
 
-            return true;
+            return {true, it};
         }
 };
 
@@ -131,57 +108,53 @@ class SymbolMatcher : public Matcher { //  R"(^[{}()[\];=,`|])"
             return SYMBOLS.find(c) != std::string::npos;
         }
 
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
-            it = cursor;
-
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
 
             if(it != end && isASymbol(*it)) {
                 ++it;
-                return true;
+                return {true, it};
             }
 
-            return false;
+            return {false, it};
         }
 };
 
 class DecimalMatcher : public Matcher { //R"(^\d+(?!\.|[eE]))"
     public:
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
-            it = cursor;
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
 
             if (!isADigit(*it))
-                return false;
+                return {false, it};
 
             while (it != end && isADigit(*it))
                 ++it;
 
-            return true;
+            return {true, it};
 
-            return false;
+            return {false, it};
         }
 };
 
 class FloatMatcher : public Matcher { //R"(^((\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?))"
     public:
-        bool match(const std::string::iterator cursor, const std::string::iterator end) override {
-            start = cursor;
-            it = cursor;
+        std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
+            auto it = cursor;
 
             if (!isADigit(*it))
-                return false;
+                return {false, it};
 
             while (it != end && isADigit(*it))
                 ++it;
 
             if (it == end || *it != '.')  // must have decimal point for float
-                return false;
+                return {false, it};
 
             ++it; // '.'
 
             if (it == end || !isADigit(*it))
-                return false;
+                return {false, it};
 
             while (it != end && isADigit(*it))
                 ++it;
@@ -195,7 +168,7 @@ class FloatMatcher : public Matcher { //R"(^((\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?
             while (it != end && isADigit(*it))
                 ++it;
 
-            return true;
+            return {true, it};
         }
 };
 
@@ -247,15 +220,19 @@ class Lexer {
             if(cursor == source.end())
                 return Token(Token::END, "");
 
-            if(ignoreMatcher->match(cursor, source.end())) {
-                cursor = ignoreMatcher->getIterator();
+            auto [match_res, new_cursor] = ignoreMatcher->try_match(cursor, source.end());
+
+            if(match_res == true) {
+                cursor = new_cursor;
                 return getNextToken();
             }
 
             for(auto& [type, matcher] : matchers) {
-                if(matcher->match(cursor, source.end())) {
-                    cursor = matcher->getIterator();
-                    return Token(type, matcher->getValue());
+                auto [match_res, new_cursor] = matcher->try_match(cursor, source.end());
+                if(match_res == true) {
+                    std::string value = std::string(cursor, new_cursor);
+                    cursor = new_cursor;
+                    return Token(type, value);
                 }
             }
 
