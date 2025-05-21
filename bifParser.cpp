@@ -5,15 +5,15 @@
 
 class Matcher {
     protected:
-        static bool isADigit(char c) {
+        static bool isADigit(const char c) {
             return c >= '0' && c <= '9';
         }
 
-        static bool isAlpha(char c) {
+        static bool isAlpha(const char c) {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
         }
 
-        static bool isAlphaNumeric(char c) {
+        static bool isAlphaNumeric(const char c) { //The underscore is not allowed by the documentation, but it is needed for the data.
             return isADigit(c) || isAlpha(c) || c == '_';
         }
 
@@ -84,14 +84,13 @@ class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|pr
         }
 };
 
-
-class WordMatcher : public Matcher { //R"(^[a-zA-Z_][a-zA-Z0-9_]*)"
+//The regular expression of the WORD token from the documentation I found is R"(^[a-zA-Z_][a-zA-Z0-9_]*)",
+//but for the seek of the project, in the data given by the professor it is useful to consider WORD even strings
+//which do not start with an alphabetical character.
+class WordMatcher : public Matcher { 
     public:
         std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
             auto it = cursor;
-
-            if (it == end || !isAlpha(*it))  // word starts with a letter
-                return {false, it};
 
             while (it != end && isAlphaNumeric(*it))  // letters or digits
                 ++it;
@@ -131,8 +130,8 @@ class DecimalMatcher : public Matcher { //R"(^\d+(?!\.|[eE]))"
             while (it != end && isADigit(*it))
                 ++it;
 
-            return {true, it};
-
+            if(!isAlphaNumeric(*it)) //making sure is not the start of a word.
+                return {true, it};
             return {false, it};
         }
 };
@@ -208,10 +207,12 @@ class Lexer {
             ignoreMatcher = std::make_unique<IgnoreMatcher>();
 
             matchers.push_back({Token::SYMBOL, std::make_unique<SymbolMatcher>()});
-            matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>()});
-            matchers.push_back({Token::WORD, std::make_unique<WordMatcher>()}); // I'm making sure word come after keyword
             matchers.push_back({Token::FLOATING_POINT_LITERAL, std::make_unique<FloatMatcher>()}); 
             matchers.push_back({Token::DECIMAL_LITERAL, std::make_unique<DecimalMatcher>()}); //and so decimal after floating
+            matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>()});
+            //Only after I matched DECIMAL LITERAL and KEYWORD I can try WORD, because WORD contains the others.
+            matchers.push_back({Token::WORD, std::make_unique<WordMatcher>()});
+        
         }
 
         Token getNextToken() {
@@ -309,7 +310,7 @@ class Parser {
                 return;
             }
             expect(Token::SYMBOL, "(");
-                do { //I'm skipping this data because untile now I don't need them
+                do { //I'm skipping this data because until now I don't need them
                     advance();
                     if(current.type == Token::END)
                         break;
@@ -336,7 +337,7 @@ class Parser {
             std::string variable;
             std::vector<std::string> parents;
             expect(Token::SYMBOL, "(");
-
+            
             variable = expect(Token::WORD).value;
 
             while(current.value != ")"){
@@ -373,7 +374,13 @@ class Parser {
             expect(Token::SYMBOL, "{");
             
             for (int i = 0; i < n; ++i) {
-                std::string value = expect(Token::WORD).value;
+                std::string value;
+
+                if(current.type == Token::DECIMAL_LITERAL) //The grammar doesn't allow decimal literal, but the data do
+                    value = expect(Token::DECIMAL_LITERAL).value;
+                else
+                    value = expect(Token::WORD).value;
+
                 values[i] = value;
             }
 
@@ -440,7 +447,7 @@ class Parser {
 
 int main() {
 
-    std::string filename = "BIF/pathfinder.bif";
+    std::string filename = "BIF/munin1.bif";
 
     std::cin>>filename;
 
