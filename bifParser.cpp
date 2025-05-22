@@ -64,7 +64,7 @@ class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|pr
             "network", "variable", "probability", "table", "type", "discrete", "default", "property"
         };
 
-        bool areEqual(const std::string a, const std::string b) {
+        bool areEqual(const std::string& a, const std::string& b) {
             return a.compare(b) == 0;
         }
 
@@ -212,12 +212,9 @@ class Lexer {
             matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>()});
             //Only after I matched DECIMAL LITERAL and KEYWORD I can try WORD, because WORD contains the others.
             matchers.push_back({Token::WORD, std::make_unique<WordMatcher>()});
-        
         }
 
         Token getNextToken() {
-            std::smatch match_result;
-
             if(cursor == source.end())
                 return Token(Token::END, "");
 
@@ -333,7 +330,7 @@ class Parser {
             return table;
         }
 
-        std::pair<std::string, std::vector<std::string>> parseProabilityVariablesList() {
+        std::pair<std::string, std::vector<std::string>> parseProbabilityVariablesList() {
             std::string variable;
             std::vector<std::string> parents;
             expect(Token::SYMBOL, "(");
@@ -352,7 +349,7 @@ class Parser {
             Probability probability;
             expect(Token::KEYWORD, "probability");
 
-            auto [variable, parents] = parseProabilityVariablesList();
+            auto [variable, parents] = parseProbabilityVariablesList();
             probability.variable = variable;
             probability.parents = parents;
             
@@ -437,11 +434,9 @@ class Parser {
                         std::cout<<"probability: "<<probability.variable<<std::endl;
                         network.probabilities.push_back(probability);
                     }
-                } else {
+                } else
                     throw std::runtime_error("Expected 'variable' or 'probability', got " + current.value);
-                }
-            }
-            
+            }         
         }
 };
 
