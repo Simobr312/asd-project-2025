@@ -37,6 +37,7 @@ class IgnoreMatcher : public Matcher {
         bool matchCommentEnd(const std::string::iterator it, const std::string::iterator end) {
             return it != end && *it == '*' && (it + 1) != end && *(it + 1) == '/';
         }
+
     public:
         std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
             auto it = cursor;
@@ -59,14 +60,11 @@ class IgnoreMatcher : public Matcher {
 };
 
 class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|property|type|discrete|default|table)\b)" 
+    private:
+        const std::vector<std::string> keywords;
     public:
-        inline static const std::vector<std::string> KEYWORDS = {
-            "network", "variable", "probability", "table", "type", "discrete", "default", "property"
-        };
-
-        bool areEqual(const std::string& a, const std::string& b) {
-            return a.compare(b) == 0;
-        }
+        KeywordMatcher(const std::vector<std::string>& keywords) 
+            : keywords(keywords) {}
 
         bool theWordEnds(const std::string::iterator it) {
             return !isAlphaNumeric(*it);
@@ -74,10 +72,9 @@ class KeywordMatcher : public Matcher { //R"(^\b(network|variable|probability|pr
 
         std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
             auto it = cursor;
-            for(auto keyword : KEYWORDS) {
+            for(auto keyword : keywords) {
                 it = cursor + keyword.size();
-                if(it <= end && areEqual(keyword, std::string(cursor, it)) 
-                    && theWordEnds(it))
+                if(it <= end && std::string(cursor, it) == keyword && theWordEnds(it))
                         return {true, it};
             }
             return {false, it};
@@ -99,18 +96,21 @@ class WordMatcher : public Matcher {
         }
 };
 
-class SymbolMatcher : public Matcher { //  R"(^[{}()[\];=,`|])" 
+class CharSetMatcher : public Matcher { //  R"(^[{}()[\];=,`|])"
+    private:
+        const std::string ALLOWED;
     public:
-        inline static const std::string SYMBOLS = "[{}()[];=,`|]";
+        CharSetMatcher(const std::string& allowed)
+            : ALLOWED(allowed) {}
 
-        bool isASymbol(const char c) {
-            return SYMBOLS.find(c) != std::string::npos;
+        bool isAllowed(const char c) {
+            return ALLOWED.find(c) != std::string::npos;
         }
 
         std::pair<bool, std::string::iterator> try_match(const std::string::iterator cursor, const std::string::iterator end) override {
             auto it = cursor;
 
-            if(it != end && isASymbol(*it)) {
+            if(it != end && isAllowed(*it)) {
                 ++it;
                 return {true, it};
             }
@@ -199,6 +199,10 @@ class Lexer {
         std::unique_ptr<Matcher> ignoreMatcher;
         std::vector<std::pair<Token::Type, std::unique_ptr<Matcher>>> matchers;
 
+        inline static const std::vector<std::string> KEYWORDS = {
+            "network", "variable", "probability", "table", "type", "discrete", "default", "property"
+        };
+
     public:
         Lexer(std::ifstream& input) 
         : source(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()),
@@ -206,10 +210,10 @@ class Lexer {
 
             ignoreMatcher = std::make_unique<IgnoreMatcher>();
 
-            matchers.push_back({Token::SYMBOL, std::make_unique<SymbolMatcher>()});
+            matchers.push_back({Token::SYMBOL, std::make_unique<CharSetMatcher>("[{}()[];=,`|]")});
             matchers.push_back({Token::FLOATING_POINT_LITERAL, std::make_unique<FloatMatcher>()}); 
             matchers.push_back({Token::DECIMAL_LITERAL, std::make_unique<DecimalMatcher>()}); //and so decimal after floating
-            matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>()});
+            matchers.push_back({Token::KEYWORD, std::make_unique<KeywordMatcher>(KEYWORDS)});
             //Only after I matched DECIMAL LITERAL and KEYWORD I can try WORD, because WORD contains the others.
             matchers.push_back({Token::WORD, std::make_unique<WordMatcher>()});
         }
