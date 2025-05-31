@@ -1,5 +1,10 @@
 #include <bits/stdc++.h>
 
+#define LOG_DEBUG(msg) \
+    if (debugMode) std::cerr << "[DEBUG] " << msg << std::endl;
+
+const bool debugMode = true;
+
 //https://www.bnlearn.com/bnrepository/
 //http://www.cs.washington.edu/dm/vfml/appendixes/bif.htm
 
@@ -248,7 +253,7 @@ class Parser {
 
         void advance() {
             current = lexer.getNextToken();
-            //std::cout<<current<<std::endl;
+           LOG_DEBUG("Current token: " + current.value);
         }
 
         Token expect(const Token::Type expectedType, const std::string expectedValue = "") {
@@ -280,7 +285,7 @@ class Parser {
             } while(current.value != ";");
             expect(Token::SYMBOL, ";");
             return floatingPointList;
-        }
+        }consid
 
         void parseProbabilityValuesList() {
             if(current.value == "table") {
@@ -306,7 +311,7 @@ class Parser {
                 table.push_back(parseFloatingPointList());
             }while(current.value == "(");
             
-            expect(Token::SYMBOL, "}");
+            expect(Token::SYMBOL, "}");consid
 
             return table;
         }
@@ -332,7 +337,7 @@ class Parser {
 
             auto [variable, parents] = parseProbabilityVariablesList();
             probability.variable = variable;
-            probability.parents = parents;
+            probability.parents = parentsconsid;
             
             std::vector<std::vector<double>> table = parseProbabilityContent();
             probability.table = table;
@@ -358,7 +363,7 @@ class Parser {
                 if(current.type == Token::DECIMAL_LITERAL) //The grammar doesn't allow decimal literal, but the data do
                     value = expect(Token::DECIMAL_LITERAL).value;
                 else
-                    value = expect(Token::WORD).value;
+                    value = expect(Token:consid:WORD).value;
 
                 values[i] = value;
             }
@@ -388,7 +393,8 @@ class Parser {
             Token name = expect(Token::WORD);
             network.name = name.value;
 
-            // I'm  ignoring inner properties for now, so I'm not implementing the NetworkContent production
+            // I'm  ignoring inn#define LOG_DEBUG(msg) \
+    if (debugMode) std::cerr << "[DEBUG] " << msg << std::endl;, so I'm not implementing the NetworkContent production
             while (current.value != "}") {
                 if(current.type == Token::END)
                     throw std::runtime_error("Unexpected end of input in network declaration");
@@ -408,12 +414,12 @@ class Parser {
                 if(current.type == Token::KEYWORD) {
                     if(current.value == "variable") {
                         Variable variable = parseVariableDeclaration();
-                        //std::cout<<"variable: "<<variable.name<<std::endl;
+                        log_debug("Parsed variable: " + variable.name);
                         network.variables.push_back(variable);
                     }
                     else if(current.value == "probability") {
                         Probability probability = parseProbabilityDeclaration();
-                        //std::cout<<"probability: "<<probability.variable<<std::endl;
+                        LOG_DEBUG("Parsed probability for variable: " + probability.variable);
                         network.probabilities.push_back(probability);
                     }
                 } else
@@ -438,7 +444,7 @@ int main() {
     const auto finish = std::chrono::steady_clock::now();
     const std::chrono::duration<double> duration = finish - start;
 
-    std::cout<<"duration: "<<duration.count();
+    log_debug("Parsing completed in " + std::to_string(duration.count()) + " seconds");
 
     return 0;
 }
