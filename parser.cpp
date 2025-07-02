@@ -1,10 +1,5 @@
 #include <bits/stdc++.h>
 
-#define LOG_DEBUG(msg) \
-    if (debugMode) std::cerr << "[DEBUG] " << msg << std::endl;
-
-const bool debugMode = true;
-
 //https://www.bnlearn.com/bnrepository/
 //http://www.cs.washington.edu/dm/vfml/appendixes/bif.htm
 
@@ -229,7 +224,7 @@ class Lexer {
 //
 struct Variable {
     std::string name;
-    std::vector<std::string> values;
+    std::vector<std::string> domain;
 };
 
 struct Probability {
@@ -253,7 +248,7 @@ class Parser {
 
         void advance() {
             current = lexer.getNextToken();
-           LOG_DEBUG("Current token: " + current.value);
+            //std::cout<<current<<std::endl;
         }
 
         Token expect(const Token::Type expectedType, const std::string expectedValue = "") {
@@ -285,7 +280,7 @@ class Parser {
             } while(current.value != ";");
             expect(Token::SYMBOL, ";");
             return floatingPointList;
-        }consid
+        }
 
         void parseProbabilityValuesList() {
             if(current.value == "table") {
@@ -311,7 +306,7 @@ class Parser {
                 table.push_back(parseFloatingPointList());
             }while(current.value == "(");
             
-            expect(Token::SYMBOL, "}");consid
+            expect(Token::SYMBOL, "}");
 
             return table;
         }
@@ -337,7 +332,7 @@ class Parser {
 
             auto [variable, parents] = parseProbabilityVariablesList();
             probability.variable = variable;
-            probability.parents = parentsconsid;
+            probability.parents = parents;
             
             std::vector<std::vector<double>> table = parseProbabilityContent();
             probability.table = table;
@@ -352,27 +347,27 @@ class Parser {
             expect(Token::KEYWORD, "discrete");
             expect(Token::SYMBOL, "[");
             int n = std::stoi(expect(Token::DECIMAL_LITERAL).value);
-            std::vector<std::string> values(n);
+            std::vector<std::string> domain(n);
             expect(Token::SYMBOL, "]");
             expect(Token::SYMBOL, "{");
             
-            values.reserve(n);
+            domain.reserve(n);
             for (int i = 0; i < n; ++i) {
-                std::string value;
+                std::string element_of_domain;
 
                 if(current.type == Token::DECIMAL_LITERAL) //The grammar doesn't allow decimal literal, but the data do
-                    value = expect(Token::DECIMAL_LITERAL).value;
+                    element_of_domain = expect(Token::DECIMAL_LITERAL).value;
                 else
-                    value = expect(Token:consid:WORD).value;
+                    element_of_domain = expect(Token::WORD).value;
 
-                values[i] = value;
+                domain[i] = element_of_domain;
             }
 
             expect(Token::SYMBOL, "}");
             expect(Token::SYMBOL, ";");
 
             expect(Token::SYMBOL, "}");
-            return values;
+            return domain;
         }
 
         Variable parseVariableDeclaration() {
@@ -383,7 +378,7 @@ class Parser {
             variable.name = name.value;
 
             //I'm ignoring inner properties for now, and so the parseVariableContent() production
-            variable.values = parseVariableDiscrete();
+            variable.domain = parseVariableDiscrete();
             return variable;
         }
 
@@ -393,8 +388,7 @@ class Parser {
             Token name = expect(Token::WORD);
             network.name = name.value;
 
-            // I'm  ignoring inn#define LOG_DEBUG(msg) \
-    if (debugMode) std::cerr << "[DEBUG] " << msg << std::endl;, so I'm not implementing the NetworkContent production
+            // I'm  ignoring inner properties for now, so I'm not implementing the NetworkContent production
             while (current.value != "}") {
                 if(current.type == Token::END)
                     throw std::runtime_error("Unexpected end of input in network declaration");
@@ -414,12 +408,12 @@ class Parser {
                 if(current.type == Token::KEYWORD) {
                     if(current.value == "variable") {
                         Variable variable = parseVariableDeclaration();
-                        log_debug("Parsed variable: " + variable.name);
+                        //std::cout<<"variable: "<<variable.name<<std::endl;
                         network.variables.push_back(variable);
                     }
                     else if(current.value == "probability") {
                         Probability probability = parseProbabilityDeclaration();
-                        LOG_DEBUG("Parsed probability for variable: " + probability.variable);
+                        //std::cout<<"probability: "<<probability.variable<<std::endl;
                         network.probabilities.push_back(probability);
                     }
                 } else
@@ -427,26 +421,3 @@ class Parser {
             }         
         }
 };
-
-int main() {
-
-    std::string filename = "BIF/munin1.bif";
-
-    std::cin>>filename;
-
-    std::ifstream input(filename);    
-    Parser parser(input);
-
-    const auto start = std::chrono::steady_clock::now();
-
-    parser.parse();
-
-    const auto finish = std::chrono::steady_clock::now();
-    const std::chrono::duration<double> duration = finish - start;
-
-    log_debug("Parsing completed in " + std::to_string(duration.count()) + " seconds");
-
-    return 0;
-}
-
-//g++ -O3 -Wall -Wextra -Wpedantic -o bifParser bifParser.cpp

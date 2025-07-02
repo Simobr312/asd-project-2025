@@ -1,0 +1,125 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{geometry}
+\geometry{a4paper, top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Report Progetto Reti Bayesiane},
+    pdfpagemode=FullScreen,
+}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Definizione di uno stile per il codice C++
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{cppstyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    language=C++
+}
+\lstset{style=cppstyle}
+
+\title{Report sull'Algoritmo di Variable Elimination\\per Reti Bayesiane}
+\author{Simone Riccio}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Questo documento descrive l'implementazione dell'algoritmo di Variable Elimination per il calcolo delle probabilità marginali in una rete bayesiana. L'obiettivo è fornire una panoramica dell'algoritmo, delle scelte implementative in C++ e di un esempio pratico di utilizzo.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduzione}
+Le reti bayesiane sono modelli grafici probabilistici che rappresentano un insieme di variabili aleatorie e le loro dipendenze condizionali tramite un grafo aciclico diretto (DAG). Il calcolo di inferenza, come la determinazione della probabilità marginale di una variabile data un'evidenza, è un compito fondamentale ma computazionalmente complesso.
+
+\section{L'Algoritmo di Variable Elimination}
+L'algoritmo di Variable Elimination (VE) è una tecnica per calcolare esattamente le probabilità marginali in una rete bayesiana. L'idea centrale è di eliminare le variabili non di interesse una alla volta, sommando (o marginalizzando) su di esse.
+
+\subsection{Fattori}
+L'algoritmo opera su una struttura dati chiamata "fattore". Un fattore $\phi(X_1, \dots, X_k)$ è una funzione che mappa ogni possibile assegnazione di valori alle variabili $X_1, \dots, X_k$ a un numero reale non negativo. Le tabelle di probabilità condizionale (CPT) della rete sono i fattori iniziali.
+
+\subsection{Passi dell'Algoritmo}
+L'algoritmo si articola nei seguenti passi:
+\begin{enumerate}
+    \item \textbf{Inizializzazione:} Per ogni variabile, si crea un fattore corrispondente alla sua CPT.
+    \item \textbf{Riduzione dell'evidenza:} Se sono presenti variabili di evidenza, si riducono i fattori per riflettere i valori osservati.
+    \item \textbf{Eliminazione delle variabili:} Per ogni variabile da eliminare (che non è né di query né di evidenza):
+    \begin{enumerate}
+        \item Si raccolgono tutti i fattori che includono la variabile.
+        \item Si calcola il prodotto di questi fattori.
+        \item Si marginalizza la variabile dal fattore prodotto, creando un nuovo fattore.
+    \end{enumerate}
+    \item \textbf{Risultato finale:} Dopo aver eliminato tutte le variabili necessarie, si calcola il prodotto dei fattori rimanenti.
+    \item \textbf{Normalizzazione:} Il risultato viene normalizzato per ottenere una distribuzione di probabilità.
+\end{enumerate}
+
+\section{Implementazione in C++}
+La nostra implementazione in C++ si concentra sulla creazione di una classe \texttt{Factor} flessibile e sull'orchestrazione dei passi dell'algoritmo VE.
+
+\subsection{Struttura Dati per i Fattori}
+Un fattore è stato implementato come una classe che contiene:
+\begin{itemize}
+    \item Un elenco delle variabili coinvolte.
+    \item Una mappa o un vettore per memorizzare i valori del fattore per ogni assegnazione.
+\end{itemize}
+
+\begin{lstlisting}[caption={Esempio di scheletro della classe Factor in C++.}, label=lst:factor]
+class Factor {
+public:
+    // Costruttori, metodi per il prodotto, la marginalizzazione, etc.
+
+private:
+    std::vector<std::string> variables;
+    std::map<std::vector<int>, double> values;
+};
+\end{lstlisting}
+
+\section{Esempio di Esecuzione}
+Consideriamo una semplice rete bayesiana (es. la rete "Sprinkler"). Qui si può inserire un'immagine della rete.
+
+% \begin{figure}[h!]
+%     \centering
+%     \includegraphics[width=0.5\textwidth]{path/to/your/image.png}
+%     \caption{Esempio di rete bayesiana.}
+%     \label{fig:bn_example}
+% \end{figure}
+
+Si mostra l'output del programma per una query specifica, ad esempio $P(\text{WetGrass} | \text{Sprinkler}=\text{true})$.
+
+\section{Conclusioni}
+L'algoritmo di Variable Elimination si è dimostrato efficace per il calcolo di inferenza esatta. L'implementazione in C++ ha richiesto un'attenta gestione delle strutture dati, in particolare per la rappresentazione e la manipolazione dei fattori.
+
+\end{document}
