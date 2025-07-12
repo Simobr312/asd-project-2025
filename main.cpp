@@ -1,153 +1,279 @@
 #include "parser.cpp"
-//#include "builder.cpp"
+#include <chrono>
 #include <map>
 #include <string>
 #include <vector>
+#include <memory>
+#include <set>
+
+#define DEBUG 1
+
+
+class Node;
+
+struct CPT {
+    std::vector<Node*> parents; 
+    std::vector<double> table;
+};
 
 class Node {
 public:
     std::string name;
     std::vector<std::string> domain;
-    std::vector<std::string> parent_names;
-    std::vector<std::string> children_names;
+    CPT cpt;
+    
+    std::vector<Node*> children;
 
-    std::vector<std::vector<double>> probability_table;
+    Node(const std::string& name, const std::vector<std::string>& domain)
+        : name(name), domain(domain) {}
 
-    Node(const Variable& variable) 
-        : name(variable.name), domain(variable.domain) {}
-
-    int getValueIndex(const std::string& value) const { //Non necessaria nella rete bayesiane, dato che userò un hash map per i valori.
-        for (auto i = 0; i < domain.size(); ++i) {
-            if (domain[i] == value) {
-                return i;
-            }
-        }
-        return -1;
+    size_t getCardinality() const {
+        return domain.size();
     }
 };
 
-class BayesianNetwork {
-public:
-    std::map<std::string, Node> nodes;
 
-    BayesianNetwork(const Network& parsed_network) {
-        build(parsed_network);
-    }
-
-    Node* getNode(const std::string& name) {
-        if (nodes.count(name)) {
-            return &nodes.at(name);
-        }
-        return nullptr;
-    }
-
-private:
-    void build_variables(const Network& parsed_network) {
-        for (const auto& var : parsed_network.variables) {
-            nodes.emplace(var.name, Node(var));
-        }
-    }
-
-    void assign_probability(Node* node, const Probability& prob) {
-        node->probability_table = prob.table;
-        node->parent_names = prob.parents;
-    }
-
-    void assign_edges(Node* child_node, const std::vector<std::string>& parent_names) {
-        for (const auto& parent_name : parent_names) {
-            Node* parent_node = getNode(parent_name);
-            parent_node->children_names.push_back(child_node->name);
-        }
-    }
-
-    void build(const Network& parsed_network) {
-        build_variables(parsed_network);
-
-        for (const auto& prob : parsed_network.probabilities) {
-            Node* child_node = getNode(prob.variable);
-            
-            assign_probability(child_node, prob);
-            assign_edges(child_node, prob.parents);
-        }
-    }
-};
-
-class Factor {
-public:
+struct Factor {
     std::vector<std::string> variables;
-    std::map<std::string, std::vector<std::string>> domains;
     std::vector<double> values;
+    std::map<std::string, size_t> cardinalities; //length of domain for each variable
+    std::map<std::string, size_t> strides;
 
-    Factor(std::vector<std::string> vars, BayesianNetwork& network)
-        : variables(vars) {
-        for (const auto& var_name : variables) {
-            Node* node = network.getNode(var_name);
-            if (node)
-                domains[var_name] = node->domain;
-            else
-                throw std::runtime_error("Variable " + var_name + " not found in the Bayesian Network.");
+    Factor(const std::vector<std::string>& vars, const std::map<std::string, size_t>& cards)
+        : variables(vars), cardinalities(cards) {
 
-            for(const auto& row : node->probability_table)
-                values.insert(values.end(), row.begin(), row.end());
-        }
+        initialise_indexes();
     }
 
-    // Converte un'assegnazione di valori in un indice per il vettore 'values'.
-    int get_index(const std::map<std::string, std::string>& assignment) const {
-        int index = 0;
-        int stride = 1;
-        for (int i = variables.size() - 1; i >= 0; --i) {
-            const auto& var_name = variables[i];
-            const auto& domain = domains.at(var_name);
-            auto it = std::find(domain.begin(), domain.end(), assignment.at(var_name));
-            if (it == domain.end()) return -1;
-            int value_index = std::distance(domain.begin(), it);
-            index += value_index * stride;
-            stride *= domain.size();
+    void initialise_indexes() {
+        size_t current_stride = 1;
+        for (auto it = variables.rbegin(); it != variables.rend(); ++it) {
+            const std::string& var = *it;
+            strides[var] = current_stride;
+            current_stride *= cardinalities.at(var);
+        }
+        
+        values.resize(current_stride, 0.0);
+    }
+
+    size_t getIndex(const std::map<std::string, size_t>& assignment) const {
+        size_t index = 0;
+        for (const auto& var : variables) {
+            index += strides.at(var) * assignment.at(var);
         }
         return index;
     }
 
-    // Converte un indice del vettore 'values' in un'assegnazione di valori.
-    std::map<std::string, std::string> get_assignment(int index) const {
-        std::map<std::string, std::string> assignment;
-        int temp_index = index;
-        int stride = values.size();
-        for (const auto& var_name : variables) {
-            const auto& domain = domains.at(var_name);
-            stride /= domain.size();
-            int value_index = (temp_index / stride);
-            assignment[var_name] = domain[value_index];
-            temp_index -= value_index * stride;
+    double getValue(const std::map<std::string, size_t>& assignment) const {
+        return values[getIndex(assignment)];
+    }
+
+    std::map<std::string, size_t> getAssignment(size_t index) const {
+        std::map<std::string, size_t> assignment;
+        size_t temp_index = index;
+        for (const auto& var : variables) {
+            const size_t stride = strides.at(var);
+            
+            assignment[var] = temp_index / stride;
+            temp_index %= stride;
         }
         return assignment;
     }
+
+    void normalize() {
+        double total =  0;
+        for(const auto& val : values)
+            total += val;
+        if (total > 0)
+            for (auto& val : values)
+                val /= total;
+    }
 };
 
+Factor factorSumOut(const Factor& factor, const std::string& varToSumOut) {
+    std::vector<std::string> new_vars;
+    std::map<std::string, size_t> new_cards;
 
-
-Factor static variable_elimination(BayesianNetwork& network, const std::vector<std::string>& query_variables) {
-    std::vector<Factor> factors;
-
-    for(const auto & [node_name, node] : network.nodes) {
-        std::vector<std::string> variables = node.parent_names;
-        variables.push_back(node_name);
-        Factor factor(variables, network);
-
-        factors.push_back(factor);
+    for (const auto& var : factor.variables) {
+        if (var != varToSumOut) {
+            new_vars.push_back(var);
+            new_cards[var] = factor.cardinalities.at(var);
+        }
     }
+    
+    Factor result(new_vars, new_cards);
+    size_t varToSumOut_cardinality = factor.cardinalities.at(varToSumOut);
 
-    Factor result = factors[0];
-    for (size_t i = 1; i < factors.size(); ++i) {
-        result = factor_product(result, factors[i]);
+    for (size_t i = 0; i < result.values.size(); ++i) {
+        std::map<std::string, size_t> partial_assignment = result.getAssignment(i);
+        
+        double sum = 0.0;
+        for (size_t j = 0; j < varToSumOut_cardinality; ++j) {
+            std::map<std::string, size_t> full_assignment = partial_assignment;
+            full_assignment[varToSumOut] = j;
+            sum += factor.getValue(full_assignment);
+        }
+        result.values[i] = sum;
     }
-
+    
     return result;
 }
 
-int main() {
+Factor factorProduct(const Factor& f1, const Factor& f2) {
+    std::set<std::string> vars_set;
+    vars_set.insert(f1.variables.begin(), f1.variables.end());
+    vars_set.insert(f2.variables.begin(), f2.variables.end());
+    
+    std::vector<std::string> new_vars(vars_set.begin(), vars_set.end());
+    std::map<std::string, size_t> new_cards;
+    for(const auto& var : new_vars) {
+        if (f1.cardinalities.count(var)) new_cards[var] = f1.cardinalities.at(var);
+        else new_cards[var] = f2.cardinalities.at(var);
+    }
+    
+    Factor result(new_vars, new_cards);
 
-    std::string filename = "BIF/cancer.bif";
+    for (size_t i = 0; i < result.values.size(); ++i) {
+        std::map<std::string, size_t> full_assignment = result.getAssignment(i);
+        
+        std::map<std::string, size_t> assignment1, assignment2;
+        for (const auto& var : f1.variables) assignment1[var] = full_assignment.at(var);
+        for (const auto& var : f2.variables) assignment2[var] = full_assignment.at(var);
+        
+        result.values[i] = f1.getValue(assignment1) * f2.getValue(assignment2);
+    }
+    
+    return result;
+}
+
+//Debug logic
+void printFactor(const Factor& f, const std::string& label = "") {
+    if (!label.empty()) std::cout << "\n=== Factor: " << label << " ===\n";
+    std::cout << "Variables: ";
+    for (const auto& var : f.variables) std::cout << var << " ";
+    std::cout << "\nValues:\n";
+
+    for (size_t i = 0; i < f.values.size(); ++i) {
+        auto assignment = f.getAssignment(i);
+        std::cout << "  ";
+        for (const auto& var : f.variables)
+            std::cout << var << "=" << assignment[var] << " ";
+        std::cout << "-> " << f.values[i] << "\n";
+    }
+}
+
+class BayesianNetwork {
+private:
+    std::map<std::string, std::unique_ptr<Node>> nodes;
+public:
+    BayesianNetwork(const NetworkAST& parsedNetwork) {
+        build(parsedNetwork);
+    }
+
+    const Node* getNode(const std::string& name) const {
+        auto it = nodes.find(name);
+        if (it == nodes.end()) {
+            return nullptr;
+        }
+        return it->second.get();
+    }
+private:
+    void build(const NetworkAST& parsedNetwork) {
+        for (const auto& var : parsedNetwork.variables)
+            nodes[var.name] = std::make_unique<Node>(var.name, var.domain);
+        
+        for (const auto& prob : parsedNetwork.probabilities) {
+            Node* currentNode = nodes.at(prob.variable).get();
+
+            for (const auto& parentName : prob.parents) {
+                Node* parentNode = nodes.at(parentName).get();
+                currentNode->cpt.parents.push_back(parentNode);
+                
+                parentNode->children.push_back(currentNode);
+            }
+            
+            for(const auto& row : prob.table) // I am assuming that the order of the rows in the table matches the order of the parents
+                currentNode->cpt.table.insert(currentNode->cpt.table.end(), row.begin(), row.end());
+        }
+    }
+public:
+    Factor calculateMarginal(const std::string& queryVariableName) {
+        if (DEBUG)
+            std::cout << "\n[DEBUG] Starting marginal computation for variable: " << queryVariableName << "\n";
+        std::vector<Factor> factors;
+        for (const auto& pair : nodes) {
+            const Node* node = pair.second.get();
+            
+            std::vector<std::string> factor_vars;
+            std::map<std::string, size_t> factor_cards;
+
+            for (const auto* parent : node->cpt.parents) {
+                factor_vars.push_back(parent->name);
+                factor_cards[parent->name] = parent->getCardinality();
+            }
+
+            factor_vars.push_back(node->name);
+            factor_cards[node->name] = node->getCardinality();
+            
+            Factor f(factor_vars, factor_cards);
+            f.values = node->cpt.table;
+
+            if (DEBUG)
+                printFactor(f, "Initial factor for " + node->name);
+
+            factors.push_back(f);
+        }
+
+        for (const auto& pair : nodes) {
+            const std::string& var_to_eliminate = pair.first;
+            if (var_to_eliminate == queryVariableName) continue;
+
+            std::vector<Factor> factors_with_var;
+            std::vector<Factor> remaining_factors;
+            
+            for (const auto& f : factors) {
+                bool found = (std::find(f.variables.begin(), f.variables.end(), var_to_eliminate) != f.variables.end());
+                if (found) factors_with_var.push_back(f);
+                else remaining_factors.push_back(f);
+            }
+            
+            if (factors_with_var.empty()) continue;
+            
+            Factor product = factors_with_var[0];
+            for (size_t i = 1; i < factors_with_var.size(); ++i)
+                product = factorProduct(product, factors_with_var[i]);
+
+            if (DEBUG)
+                printFactor(product, "Product before summing out " + var_to_eliminate);
+
+            Factor summed_out = factorSumOut(product, var_to_eliminate);
+
+            if (DEBUG)
+                printFactor(summed_out, "After summing out " + var_to_eliminate);
+
+            factors = remaining_factors;
+            factors.push_back(summed_out);
+        }
+
+        Factor final_factor = factors[0];
+        for (size_t i = 1; i < factors.size(); ++i) {
+            final_factor = factorProduct(final_factor, factors[i]);
+        }
+
+        if (DEBUG)
+            printFactor(final_factor, "Final unnormalized factor");
+
+        final_factor.normalize();
+
+        if (DEBUG)
+            printFactor(final_factor, "Final normalized factor");
+        
+        return final_factor;
+    }
+};
+
+int main() {
+    std::string filename = "BIF/asia.bif";
 
     //std::cin>>filename;
 
@@ -156,25 +282,26 @@ int main() {
 
     auto start = std::chrono::steady_clock::now();
 
-    Network network = parser.parse(); //Meglio stare attenti alla restituzione per valore e non per riferimento.
+    NetworkAST parsed_network = parser.parse(); //Meglio stare attenti alla restituzione per valore e non per riferimento.
 
     auto finish = std::chrono::steady_clock::now();
     std::chrono::duration<double> duration = finish - start;
 
     std::cout<<"parsing: "<<duration.count();
 
-    start = std::chrono::steady_clock::now();
+    BayesianNetwork bn(parsed_network);
 
-    BayesianNetwork bayesian_network(network);
+    std::string queryVariableName;
+    std::cin>>queryVariableName; // Example query variable
+    Factor marginal = bn.calculateMarginal(queryVariableName);
+    std::cout << "\nMarginal distribution for " << queryVariableName << ":\n";
 
-    finish = std::chrono::steady_clock::now();
-    duration = finish - start;
+    for (size_t i = 0; i < marginal.values.size(); ++i) {
+        std::map<std::string, size_t> assignment = marginal.getAssignment(i);
+        std::cout << "P(" << queryVariableName << "=" << assignment[queryVariableName] << ") = " 
+                  << marginal.values[i] << "\n";
+    }
 
-    std::cout<<", building: "<<duration.count()<<std::endl;
-
-    variable_elimination(bayesian_network, {"Smoking"});
-
-    return 0;
 }
 
 //g++ -O3 -Wall -Wextra -Wpedantic -o main main.cpp parser.cpp -std=c++17

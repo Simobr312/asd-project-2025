@@ -1,4 +1,10 @@
-#include <bits/stdc++.h>
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <map>
+#include <functional>
+
 
 //https://www.bnlearn.com/bnrepository/
 //http://www.cs.washington.edu/dm/vfml/appendixes/bif.htm
@@ -233,7 +239,7 @@ struct Probability {
     std::vector<std::vector<double>> table;
 };
 
-struct Network {
+struct NetworkAST {
     std::string name;
     std::vector<Variable> variables;
     std::vector<Probability> probabilities;
@@ -244,7 +250,7 @@ class Parser {
         Lexer lexer;
         Token current;
 
-        Network network;
+        NetworkAST network;
 
         void advance() {
             current = lexer.getNextToken();
@@ -266,7 +272,7 @@ class Parser {
                 advance();
         }
 
-        Network parse() {
+        NetworkAST parse() {
             parseCompilationUnit();
             return network;
         }
