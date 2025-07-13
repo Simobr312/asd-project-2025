@@ -31,7 +31,7 @@ class Token {
             "network", "variable", "probability", "table", "type", "discrete", "default", "property"
         };
 
-        inline static const std::string SYMBOLS = "[{}()[];=,`|]";
+        inline static const std::string SYMBOLS = "[{}()[];=,`|]<>=.";
 };
 
 typedef std::pair<bool, std::string::iterator> match_result_t;
@@ -114,7 +114,8 @@ class Matcher {
         static match_result_t wordMatcherFunc(const std::string::iterator cursor, const std::string::iterator end) {
             auto it = cursor;
 
-            while (it != end && isAlphaNumeric(*it))  // letters or digits
+            const std::string symbols_accepted_in_word = "./_><=?-";
+            while (it != end && (isAlphaNumeric(*it) || symbols_accepted_in_word.find(*it) != std::string::npos))  // letters or digits
                 ++it;
 
             return {true, it};

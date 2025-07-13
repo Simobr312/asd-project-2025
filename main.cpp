@@ -5,9 +5,9 @@
 #include <vector>
 #include <memory>
 #include <set>
+#include <queue>
 
-#define DEBUG 1
-
+#define DEBUG 0
 
 class Node;
 
@@ -31,7 +31,6 @@ public:
         return domain.size();
     }
 };
-
 
 struct Factor {
     std::vector<std::string> variables;
@@ -146,21 +145,8 @@ Factor factorProduct(const Factor& f1, const Factor& f2) {
     return result;
 }
 
-//Debug logic
-void printFactor(const Factor& f, const std::string& label = "") {
-    if (!label.empty()) std::cout << "\n=== Factor: " << label << " ===\n";
-    std::cout << "Variables: ";
-    for (const auto& var : f.variables) std::cout << var << " ";
-    std::cout << "\nValues:\n";
-
-    for (size_t i = 0; i < f.values.size(); ++i) {
-        auto assignment = f.getAssignment(i);
-        std::cout << "  ";
-        for (const auto& var : f.variables)
-            std::cout << var << "=" << assignment[var] << " ";
-        std::cout << "-> " << f.values[i] << "\n";
-    }
-}
+class BayesianNetwork; // Forward declaration
+BayesianNetwork* bn;
 
 class BayesianNetwork {
 private:
@@ -177,6 +163,7 @@ public:
         }
         return it->second.get();
     }
+    Factor calculateMarginal(const std::string& queryVariableName);
 private:
     void build(const NetworkAST& parsedNetwork) {
         for (const auto& var : parsedNetwork.variables)
@@ -196,14 +183,61 @@ private:
                 currentNode->cpt.table.insert(currentNode->cpt.table.end(), row.begin(), row.end());
         }
     }
-public:
-    Factor calculateMarginal(const std::string& queryVariableName) {
+};
+
+//Debug logic
+void printFactor(const Factor& f, const std::string& label = "") {
+    if (!label.empty()) std::cout << "\n=== Factor: " << label << " ===\n";
+    std::cout << "Variables: ";
+    for (const auto& var : f.variables) std::cout << var << " ";
+    std::cout << "\nValues:\n";
+
+    for (size_t i = 0; i < f.values.size(); ++i) {
+        auto assignment = f.getAssignment(i);
+        std::cout << "  ";
+        for (const auto& var : f.variables) {
+            const Node* queryNode = bn->getNode(var);
+            std::cout << var << "=" << queryNode->domain[assignment[var]] << " ";
+
+        }
+        std::cout << "-> " << f.values[i] << "\n";
+    }
+}
+
+std::set<std::string> getRelevantVariables(const std::string& queryVar, const std::map<std::string, std::unique_ptr<Node>>& nodes) {
+    std::set<std::string> visited;
+    std::queue<std::string> to_visit;
+    to_visit.push(queryVar);
+
+    while (!to_visit.empty()) {
+        std::string current = to_visit.front();
+        to_visit.pop();
+
+        if (visited.count(current)) continue;
+        visited.insert(current);
+
+        const Node* node = nodes.at(current).get();
+
+        // Visita genitori
+        for (const Node* parent : node->cpt.parents)
+            to_visit.push(parent->name);
+    }
+
+    return visited;
+}
+
+Factor BayesianNetwork::calculateMarginal(const std::string& queryVariableName) {
         if (DEBUG)
             std::cout << "\n[DEBUG] Starting marginal computation for variable: " << queryVariableName << "\n";
+
+        std::set<std::string> relevantVars = getRelevantVariables(queryVariableName, nodes);
+
         std::vector<Factor> factors;
         for (const auto& pair : nodes) {
+            const std::string& nodeName = pair.first;
+            if (!relevantVars.count(nodeName)) continue;  // ignora i non-rilevanti
+
             const Node* node = pair.second.get();
-            
             std::vector<std::string> factor_vars;
             std::map<std::string, size_t> factor_cards;
 
@@ -214,7 +248,7 @@ public:
 
             factor_vars.push_back(node->name);
             factor_cards[node->name] = node->getCardinality();
-            
+
             Factor f(factor_vars, factor_cards);
             f.values = node->cpt.table;
 
@@ -269,13 +303,12 @@ public:
             printFactor(final_factor, "Final normalized factor");
         
         return final_factor;
-    }
-};
+}
 
 int main() {
     std::string filename = "BIF/asia.bif";
 
-    //std::cin>>filename;
+    std::cin>>filename;
 
     std::ifstream input(filename);    
     Parser parser(input);
@@ -287,21 +320,29 @@ int main() {
     auto finish = std::chrono::steady_clock::now();
     std::chrono::duration<double> duration = finish - start;
 
-    std::cout<<"parsing: "<<duration.count();
+    std::cout<<"Parsing took: "<<duration.count()<< std::endl;
 
-    BayesianNetwork bn(parsed_network);
+    bn = new BayesianNetwork(parsed_network);
 
     std::string queryVariableName;
     std::cin>>queryVariableName; // Example query variable
-    Factor marginal = bn.calculateMarginal(queryVariableName);
-    std::cout << "\nMarginal distribution for " << queryVariableName << ":\n";
 
+
+    start = std::chrono::steady_clock::now();
+    Factor marginal = bn->calculateMarginal(queryVariableName);
+    finish = std::chrono::steady_clock::now();
+    duration = finish - start;
+
+    std::cout << "\nMarginal distribution for " << queryVariableName << ":" << std::endl;
+
+    const Node* queryNode = bn->getNode(queryVariableName);
     for (size_t i = 0; i < marginal.values.size(); ++i) {
         std::map<std::string, size_t> assignment = marginal.getAssignment(i);
-        std::cout << "P(" << queryVariableName << "=" << assignment[queryVariableName] << ") = " 
+        std::string valueName = queryNode->domain[assignment[queryVariableName]];
+        std::cout << "P(" << queryVariableName << "=" << valueName << ") = " 
                   << marginal.values[i] << "\n";
     }
-
+    std::cout << "Marginal computation took: " << duration.count() << " seconds." << std::endl;
 }
 
 //g++ -O3 -Wall -Wextra -Wpedantic -o main main.cpp parser.cpp -std=c++17
