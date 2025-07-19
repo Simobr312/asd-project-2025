@@ -51,7 +51,9 @@ int main(int argc, char* argv[]) {
     BayesianNetwork bn(parsed_network);
 
     start = std::chrono::steady_clock::now();
+
     Factor marginal = bn.calculateMarginal(queryVariableName);
+    
     finish = std::chrono::steady_clock::now();
     duration = finish - start;
 
