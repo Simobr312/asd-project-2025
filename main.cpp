@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
     start = std::chrono::steady_clock::now();
 
     Factor marginal = bn.calculateMarginal(queryVariableName);
-    
+
     finish = std::chrono::steady_clock::now();
     duration = finish - start;
 

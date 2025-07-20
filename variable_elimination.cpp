@@ -20,17 +20,13 @@ Factor::Factor(const std::vector<std::string>& vars, const std::map<std::string,
     initialise_indexes();
 }
 
-std::map<std::string, size_t> Factor::getAssignment(size_t index) const {
-    std::map<std::string, size_t> assignment;
-    size_t temp_index = index;
-    for (const auto& var : variables) {
-        const size_t stride = strides.at(var);
-        assignment[var] = temp_index / stride;
-        temp_index %= stride;
-    }
-    return assignment;
-}
-
+/*
+    In order to represent the values of the factor, we used a one-dimensional vector.
+    We compute strides which are "steps" to take in the one-dimensional vector
+    to get the index of a variable's value based on its assignment.
+    For example, if we have variables ["A", "B"] with cardinalities {"A": 2, "B": 3},
+    the values vector will have size 2 * 3 = 6.
+*/
 void Factor::initialise_indexes() {
     size_t current_stride = 1;
     for (auto it = variables.rbegin(); it != variables.rend(); ++it) {
@@ -41,6 +37,30 @@ void Factor::initialise_indexes() {
     values.resize(current_stride, 0.0);
 }
 
+
+/*
+    An assignment is a mapping of variable names to the index of their value.
+    For example, if variables = ["A", "B"] and the assignment is {{"A", 0}, {"B", 1}},
+    it means A takes the first value in its domain and B takes the second value.
+*/
+std::map<std::string, size_t> Factor::getAssignment(size_t index) const {
+    std::map<std::string, size_t> assignment;
+
+    size_t temp_index = index;
+    for (const auto& var : variables) {
+        const size_t stride = strides.at(var);
+        assignment[var] = temp_index / stride;
+        temp_index %= stride;
+    }
+    return assignment;
+}
+
+/*
+    The index in the one-dimensional values vector is computed by multiplying the index of each variable
+    by its stride (the number of combinations of the variables that come after it).
+    For example, for the assignment {{"A", 1}, {"B", 2}, {"C", 3}} would be:
+    index =  (1 * strides["A"]) + (2 * strides["B"]) + (3 * strides["C"])
+*/
 size_t Factor::getIndex(const std::map<std::string, size_t>& assignment) const {
     size_t index = 0;
     for (const auto& var : variables) {
